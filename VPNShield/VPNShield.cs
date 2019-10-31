@@ -43,9 +43,11 @@ namespace VPNShield
         "    \"block-vpns\": false,\n" +
         "    \"iphub-apikey\": \"put-key-here\",\n" +
         "    \"block-new-steam-accounts\": true,\n" +
+        "    \"block-new-steam-accounts-within-days\": 0,\n" +
         "    \"block-non-setup-steam-accounts\": true,\n" +
         "    \"no-purchases-kick-message\": \"This server does not allow new Steam accounts, you have to buy something on Steam before playing.\",\n" +
         "    \"non-setup-kick-message\": \"This server does not allow non setup Steam accounts, you have to setup your Steam profile before playing.\",\n" +
+        "    \"steam-account-within-days-kick-message\": \"Your Steam account is too new to play on this server.\",\n" +
         "    \"verbose\": false,\n" +
         "}";
 
@@ -270,9 +272,10 @@ namespace VPNShield
 
                 string xmlResponse = new StreamReader(response.GetResponseStream()).ReadToEnd();
 
-                string[] foundStrings = xmlResponse.Split('\n').Where(w => w.Contains("isLimitedAccount")).ToArray();
+				string[] foundStrings = xmlResponse.Split('\n');
+				string[] limitedAccountString = foundStrings.Where(w => w.Contains("isLimitedAccount")).ToArray();
 
-                if (foundStrings.Length == 0)
+				if (limitedAccountString.Length == 0)
                 {
                     if (config.Value<bool>("block-non-setup-steam-accounts"))
                     {
@@ -287,14 +290,32 @@ namespace VPNShield
                     }
                 }
 
-                bool isLimitedAccount = foundStrings[0].Where(c => char.IsDigit(c)).ToArray()[0] != '0';
-                if (isLimitedAccount)
+                if (limitedAccountString[0].Where(c => char.IsDigit(c)).ToArray()[0] != '0')
                 {
                     this.Info(ev.Player.Name + " has a new steam account with no purchases.");
                     if (config.Value<bool>("block-new-steam-accounts"))
                     {
-                        ev.Player.Ban(0, config.Value<string>("no-purchases-kick-message"));
-                        return true;
+						if (config.Value<int>("block-new-steam-accounts-within-days") > 0)
+						{
+							string dateString = foundStrings.Where(w => w.Contains("memberSince")).ToArray().First();
+							string temp1 = dateString.Substring(dateString.IndexOf(">") + 1);
+							if ((int)(DateTime.Now - Convert.ToDateTime(temp1.Substring(0, temp1.IndexOf("<")))).TotalDays <= config.Value<int>("block-new-steam-accounts-within-days"))
+							{
+								this.Info(ev.Player.Name + " has a steam account younger than the required amount of days.");
+								ev.Player.Ban(0, config.Value<string>("steam-account-within-days-kick-message"));
+								return true;
+							}
+							else
+							{
+								this.Info(ev.Player.Name + " has a steam account with no purchases but is older than the required amount of days.");
+								return false;
+							}
+						}
+						else
+						{
+							ev.Player.Ban(0, config.Value<string>("no-purchases-kick-message"));
+							return true;
+						}
                     }
                 }
                 else if (config.Value<bool>("verbose"))
